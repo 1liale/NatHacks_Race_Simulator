@@ -3,17 +3,21 @@ import pandas as pd
 
 from matplotlib import pyplot as plt
 
-from sklearn import preprocessing
+from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import KFold
-from sklearn.svm import SVC
 from sklearn.metrics import plot_confusion_matrix
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier
 
-from pyriemann.utils.covariance import Covariances
 from pyriemann.estimation import XdawnCovariances
 from pyriemann.tangentspace import TangentSpace
 
-folder = "./NatHacks_Race_Simulator/Collected_Data/FormattedEEG/"
+from joblib import Parallel, delayed
+from time import time
+
+folder = "../Collected_Data/FormattedEEG/"
 types = ["control", "left_blink", "right_blink"]
 paths = np.array([["left_blink_var1", 1], ["left_blink_var2", 1], ["right_blink_var1", 2], ["right_blink_var2", 2], ["control_var1", 0], ["control_var2", 0]])
 
@@ -40,20 +44,28 @@ def read_csvs(folder, types, paths):
 
 X, y = read_csvs(folder, types, paths)
 
+def train_model(X, y, n_splits, model):
+    cv = KFold(n_splits, shuffle=True)
+    clf = make_pipeline(XdawnCovariances(estimator="oas"), TangentSpace(metric = "riemann"), model)
+    pred = np.zeros(len(y))
+    
+    def train_single_set(train_idx, test_idx):
+        y_train, y_test = y[train_idx], y[test_idx]
+        clf.fit(X[train_idx], y_train)
+        y_predict = clf.predict(X[test_idx])
+        return dict(test_idx = test_idx, y_predict = y_predict)
+        
+    out = Parallel(n_jobs = 3)(delayed(train_single_set)(train_idx, test_idx) for train_idx, test_idx in cv.split(X))
+    for d in out:
+        pred[d["test_idx"]] = d["y_predict"]
+    
+    clf = clf.fit(X, y)
+    
+    return clf, pred
 
-cv = KFold(n_splits=4, shuffle=True, random_state=42)
+dur = time()
+clf, pred = train_model(X, y, 8, RandomForestClassifier())
+dur = time() - dur
 
-clf = make_pipeline(XdawnCovariances(estimator='oas'), TangentSpace(metric = "riemann"), SVC(C = 1.0, kernel = "rbf", gamma = "auto"))
-
-pred = np.zeros(len(y))
-print(len(y))
-
-for train_idx, test_idx in cv.split(X):
-    y_train, y_test = y[train_idx], y[test_idx]
-    clf.fit(X[train_idx], y_train)
-    pred[test_idx] = clf.predict(X[test_idx])
-
-print(y.shape)
-print(pred.)
-acc = np.mean(pred == y)
-print("Classification accuracy: %f " % (acc))
+print(np.mean(pred == y))
+print(dur)
