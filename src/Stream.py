@@ -5,9 +5,10 @@ import numpy as np
 import keyboard
 import threading
 import time
+import sys
 
-buffer = np.zeros((750, 4))
-lock = threading.lock()
+buffer = np.full((750, 4), sys.maxsize)
+lock = threading.Lock()
 
 def start_stream():
     print("looking for an EEG stream...")
@@ -22,10 +23,12 @@ def start_stream():
 
 def get_data():
     with lock:
-        return buffer
+        temp = buffer
+        return temp
 
 # Start steam
-th = threading.Thread(target = start_steam)
+th = threading.Thread(target = start_stream)
+th.start()
 
 while True:
     if keyboard.is_pressed("esc"):
@@ -34,5 +37,7 @@ while True:
 
     buffer = get_data()
     print(buffer.shape)
+    print(buffer)
+    # time.sleep(3)
 
 print('Streams closed')
