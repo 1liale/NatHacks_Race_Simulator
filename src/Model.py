@@ -16,7 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 
 
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, dump
 from time import time
 
 folder = "../Collected_Data/FormattedEEG/"
@@ -79,36 +79,38 @@ sVC_Pipepline = make_pipeline(XdawnCovariances(estimator = "oas"), TangentSpace(
 mLP_Pipepline = make_pipeline(XdawnCovariances(estimator = "oas"), TangentSpace(metric = "riemann"), MLPClassifier())
 
 
-RandomForest_params = {"xdawncovariances__nfilter": [2, 4, 8],
-                       "randomforestclassifier__n_estimators": [50, 100, 200, 400, 600, 800, 1000],
+RandomForest_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
+                       "randomforestclassifier__n_estimators": [500, 600, 700, 800, 900],
                        "randomforestclassifier__criterion": ["gini", "entropy"],
                        "randomforestclassifier__max_features": [None, "sqrt", "log2"]}
 
 optimal_RandomForest = train_model(X, y, randomForest_Pipepline, cv, RandomForest_params)
 optimal_RandomForest.fit(X, y)
+print(optimal_RandomForest.best_params_)
 dump(optimal_RandomForest, './models/OptimalRandomForest.joblib')
 
-
-SVC_params = {"xdawncovariances__nfilter": [2, 4, 8],
-              "svc__C": [0.1, 0.5, 1, 10, 100],
-              "svc__gamma": ["scale", 1, 0.01, 0.001, 0.0001] ,
+SVC_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
+              "svc__C": [1, 5, 10, 15, 100],
+              "svc__gamma": ["scale"] ,
               "svc__kernel": ["rbf"],
               "svc__decision_function_shape": ["ovo", "ovr"]}
 
 optimal_SVC = train_model(X, y, sVC_Pipepline, cv, SVC_params)
 optimal_SVC.fit(X, y)
+print(optimal_SVC.best_params_)
 dump(optimal_SVC, './models/Optimal_SVC.joblib')
 
-         
-MLP_params = {"xdawncovariances__nfilter": [2, 4, 8],
-              "mlpclassifier__hidden_layer_sizes": [(100,), (300,), (500,),(100, 100), (300, 300), (500, 500)],
+     
+MLP_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
+              "mlpclassifier__hidden_layer_sizes": [(200,), (250,), (300,), (350,),  (400,)],
               "mlpclassifier__activation": ["relu", "tanh"],
               "mlpclassifier__solver": ["adam", "sgd", "lbfgs"],
-              "mlpclassifier__batch_size": [100, 200, 250],
-              "mlpclassifier__learning_rate": ["constant", "invscaling", "adaptive"]}
+              "mlpclassifier__learning_rate": ["constant", "invscaling", "adaptive"],
+	      "mlpclassifier__max_iter": [10000]}
 
 optimal_MLP = train_model(X, y, mLP_Pipepline, cv, MLP_params)
 optimal_MLP.fit(X, y)
+print(optimal_MLP.best_params_)
 dump(optimal_MLP, './models/Optimal_MLP.joblib')
 
 """ 
