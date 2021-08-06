@@ -15,16 +15,34 @@ from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 
-
 from joblib import Parallel, delayed, dump
 from time import time
 
 folder = "../Collected_Data/FormattedEEG/"
-types = ["control", "left_blink", "right_blink", "jaw_clench"]
-paths = np.array([["left_blink_var1", 1], ["left_blink_var2", 1], ["right_blink_var1", 2], ["right_blink_var2", 2], ["control_var1", 0], ["control_var2", 0], ["control_var3", 0], ["jaw_clench_var1", 3], ["jaw_clench_var2", 3]])
+types = ["control", "left_blink", "right_blink"]
+paths = np.array([["left_blink_var1", 1], ["right_blink_var1", 2], ["control_var1", 0]])
 
-# Read in csv files
-def read_csvs(folder, types, paths):
+# Grid search params
+RandomForest_params = {"xdawncovariances__nfilter": [1, 2, 3, 4, 5],
+                       "randomforestclassifier__n_estimators": [700, 725, 750, 775,  800, 875, 850, 900],
+                       "randomforestclassifier__criterion": ["gini", "entropy"],
+                       "randomforestclassifier__max_features": [None, "sqrt", "log2"]}
+
+SVC_params = {"xdawncovariances__nfilter": [1, 2, 3, 4, 5],
+              "svc__C": [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35],
+              "svc__gamma": ["scale", 0.01, 0.1, 1, 10, 100] ,
+              "svc__kernel": ["rbf"],
+              "svc__decision_function_shape": ["ovo", "ovr"]}
+
+MLP_params = {"xdawncovariances__nfilter": [1, 2, 3, 4, 5],
+              "mlpclassifier__hidden_layer_sizes": [(180,), (190,), (200,), (210,), (220), (230), (240,)],
+              "mlpclassifier__activation": ["relu", "tanh", "logistic"],
+              "mlpclassifier__solver": ["adam", "sgd", "lbfgs"],
+              "mlpclassifier__learning_rate": ["constant", "invscaling", "adaptive"],
+	      "mlpclassifier__max_iter": [10000]}
+
+# Read and preprocess in csv files
+def process_csvs(folder, types, paths):
     output_x = []
     output_y = []
     
@@ -37,7 +55,7 @@ def read_csvs(folder, types, paths):
                 input_data = pd.read_csv(cur_path, header = 0, usecols=[1, 2, 3, 4])
                 X = input_data.to_numpy()[250:1000]
                 X = X.T
-                y = path[1] 
+                y = path[1]
                 output_x.append(X)
                 output_y.append(float(y))
                 i += 1
@@ -49,79 +67,57 @@ def read_csvs(folder, types, paths):
     return output_x, output_y
 
 # Train model
-def train_model(X, y, pipeline, cv, params):
-    return GridSearchCV(pipeline, params, scoring= "balanced_accuracy", n_jobs = -1, refit = True, cv = cv)
+def train_model(X, y, model, cv, params, file):
+    optimized_model = GridSearchCV(model, params, scoring= "balanced_accuracy", n_jobs = -1, refit = True, cv = cv)
+    optimized_model.fit(X, y)
+    dump(optimized_model, './models/' + file)
+    print(optimized_model.best_params_)
+    return optimized_model
 
-# Find accuracy score
-def evaluate_model(X, y, pipeline, cv):
-    clf = pipeline
+# Find accuracy score and run time
+def evaluate_model(X, y, model, cv):
     pred = np.zeros(len(y))
     
     def train_single_set(train_idx, test_idx):
         y_train, y_test = y[train_idx], y[test_idx]
-        clf.fit(X[train_idx], y_train)
-        y_predict = clf.predict(X[test_idx])
+        model.fit(X[train_idx], y_train)
+        y_predict = model.predict(X[test_idx])
         return dict(test_idx = test_idx, y_predict = y_predict)
-        
+    
+    dur = time()
     out = Parallel(n_jobs = -1)(delayed(train_single_set)(train_idx, test_idx) for train_idx, test_idx in cv.split(X))
+    dur = time() - dur
+    
     for d in out:
         pred[d["test_idx"]] = d["y_predict"]
     
-    clf = clf.fit(X, y)
+    acc = np.mean(pred == y)
+    print(f"Test cases: {len(y)}")
+    print(f"Classification accuracy: {acc}")
+    print(f"Time taken: {dur}" )
+    plot_confusion_matrix(model, X, y, display_labels=types)
+    plot.show()
     
-    return clf, pred
+    model = model.fit(X, y)
+    return model
 
+# Read in data and setup cross validation
 X, y = read_csvs(folder, types, paths)
 cv = KFold(5, shuffle=True)
 
+# Setup piplines
 randomForest_Pipepline = make_pipeline(XdawnCovariances(estimator = "oas"), TangentSpace(metric = "riemann"), RandomForestClassifier())
 sVC_Pipepline = make_pipeline(XdawnCovariances(estimator = "oas"), TangentSpace(metric = "riemann"), SVC())
 mLP_Pipepline = make_pipeline(XdawnCovariances(estimator = "oas"), TangentSpace(metric = "riemann"), MLPClassifier())
 
+"""
+# Find optimal params
+optimal_RandomForest = train_model(X, y, randomForest_Pipepline, cv, RandomForest_params, "RandomForest.joblib")
+optimal_SVC = train_model(X, y, sVC_Pipepline, cv, SVC_params, "SVC.joblib")
+optimal_MLP = train_model(X, y, mLP_Pipepline, cv, MLP_params, "MLP.joblib")
+"""
 
-RandomForest_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
-                       "randomforestclassifier__n_estimators": [500, 600, 700, 800, 900],
-                       "randomforestclassifier__criterion": ["gini", "entropy"],
-                       "randomforestclassifier__max_features": [None, "sqrt", "log2"]}
-
-optimal_RandomForest = train_model(X, y, randomForest_Pipepline, cv, RandomForest_params)
-optimal_RandomForest.fit(X, y)
-print(optimal_RandomForest.best_params_)
-dump(optimal_RandomForest, './models/OptimalRandomForest.joblib')
-
-SVC_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
-              "svc__C": [1, 5, 10, 15, 100],
-              "svc__gamma": ["scale"] ,
-              "svc__kernel": ["rbf"],
-              "svc__decision_function_shape": ["ovo", "ovr"]}
-
-optimal_SVC = train_model(X, y, sVC_Pipepline, cv, SVC_params)
-optimal_SVC.fit(X, y)
-print(optimal_SVC.best_params_)
-dump(optimal_SVC, './models/Optimal_SVC.joblib')
-
-     
-MLP_params = {"xdawncovariances__nfilter": [2, 3, 4, 5],
-              "mlpclassifier__hidden_layer_sizes": [(200,), (250,), (300,), (350,),  (400,)],
-              "mlpclassifier__activation": ["relu", "tanh"],
-              "mlpclassifier__solver": ["adam", "sgd", "lbfgs"],
-              "mlpclassifier__learning_rate": ["constant", "invscaling", "adaptive"],
-	      "mlpclassifier__max_iter": [10000]}
-
-optimal_MLP = train_model(X, y, mLP_Pipepline, cv, MLP_params)
-optimal_MLP.fit(X, y)
-print(optimal_MLP.best_params_)
-dump(optimal_MLP, './models/Optimal_MLP.joblib')
-
-""" 
-dur = time()
-clf, pred = train_model(X, y, pipeline, cv)
-dur = time() - dur
-
-acc = np.mean(pred == y)
-                        
-print(f"Test cases: {len(y)}")
-print(f"Classification accuracy: {acc}")
-print(f"Time taken: {dur}" )
-plot_confusion_matrix(clf, X, y, display_labels=types)
-plt.show() """
+# Evaluate models
+evaluate_model(X, y, model, optimal_RandomForest)
+evaluate_model(X, y, model, optimal_SVC)
+evaluate_model(X, y, model, optimal_MLP)
