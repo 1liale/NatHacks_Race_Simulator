@@ -1,6 +1,7 @@
 from pylsl import StreamInlet, resolve_stream
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.signal import butter, sosfilt
 from joblib import dump, load
 
 from ahk import AHK
@@ -11,7 +12,7 @@ import sys
 ahk = AHK()
 buffer = np.full((300, 4), sys.maxsize)
 lock = threading.Lock()
-clf = load('./models/mlp.joblib')
+clf = load('./models/MLP.joblib')
 sos = butter(8, [0.5, 100], "bandpass", output = "sos", fs = 250)
 
 # Start a stream of eeg data
@@ -58,7 +59,7 @@ th.start()
 
 # Main loop to predict left/right blink and translates to keyboard controls
 while True:
-    if keyboard.is_pressed("esc"):
+    if ahk.key_state("esc"):
         print("exiting program")
         break
 
@@ -66,6 +67,7 @@ while True:
     buffer = get_data()
     model_feed_data = np.array([buffer.T])
     y_pred = clf.predict(model_feed_data)
+    print(y_pred)
     # steers car using model's prediction
     #keyboard_control(y_pred) # keyboard control, uncomment to simulate key presses
         

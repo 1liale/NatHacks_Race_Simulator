@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-file = "left_blink_var1_6"
+file = "left_blink_var1_100"
 input_file = "./NatHacks_Race_Simulator/Collected_Data/RawEEG/left_blink/" + file + "_raw.csv"
 output_file = "./NatHacks_Race_Simulator/Collected_Data/PreprocessedEEG/left_blink/" + file + "_formatted.csv"
 
