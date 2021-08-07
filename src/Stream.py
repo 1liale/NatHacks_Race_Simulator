@@ -4,18 +4,17 @@ import numpy as np
 from joblib import dump, load
 
 from ahk import AHK
-import keyboard
 import threading
 import time
 import sys
 
 ahk = AHK()
-buffer = np.full((750, 4), sys.maxsize)
+buffer = np.full((300, 4), sys.maxsize)
 lock = threading.Lock()
 clf = load('./models/mlp.joblib')
+sos = butter(8, [0.5, 100], "bandpass", output = "sos", fs = 250)
 
-types=["control", "left", "right", "jaw"]
-
+# Start a stream of eeg data
 def start_stream():
     print("looking for an EEG stream...")
     streams = resolve_stream('type', 'EEG')
@@ -26,58 +25,38 @@ def start_stream():
         with lock:
             buffer[:-1] = buffer[1:]
             buffer[-1:] = [chunk]
-    
+
+# Get data from buffer
 def get_data():
     with lock:
-        temp = buffer
-        return temp
+        X = buffer
+    filteredX = sosfilt(sos, X)
+    return filteredX
 
+# Translate left/right blink into turning left/right controls for rFactor2
 def keyboard_control(y_pred):
-    def release_all():
-        ahk.key_up("a")
-        ahk.key_up("z")
-        ahk.key_up(",")
-        ahk.key_up(".")
-
     if ahk.key_state("esc"):
         release_all()
         print("quit")
         sys.exit()
         return
-
-    # jaw clenched controls accelerate/decelerate
-    if int(y_pred[0]) == 0:
-        if not ahk.key_state("z"): 
-            ahk.key_up("a")
-            ahk.key_up(",")
-            ahk.key_up(".")
-            ahk.key_down("z")
-    elif int(y_pred[0]) == 3:
-        if not ahk.key_state("a"): 
-            ahk.key_up("z")
-            ahk.key_up(",")
-            ahk.key_up(".")
-            ahk.key_down("a") 
+    
     # left blink controls left turn
     if int(y_pred[0]) == 1:
         if not ahk.key_state(','):
-            ahk.key_up("a")
-            ahk.key_up("z")
             ahk.key_up(".")
             ahk.key_down(",")
     # right blink controls right turn
     elif int(y_pred[0]) == 2:
         if not ahk.key_state('.'):
-            ahk.key_up("a")
-            ahk.key_up("z")
             ahk.key_up(",")
             ahk.key_down(".")
-    
-# Start steam
+
+# Start steam on a seprate thread
 th = threading.Thread(target = start_stream)
 th.start()
 
-counter = 0
+# Main loop to predict left/right blink and translates to keyboard controls
 while True:
     if keyboard.is_pressed("esc"):
         print("exiting program")
@@ -88,11 +67,6 @@ while True:
     model_feed_data = np.array([buffer.T])
     y_pred = clf.predict(model_feed_data)
     # steers car using model's prediction
-    keyboard_control(y_pred) # keyboard control, uncomment to simulate key presses
-    if counter % 1000 == 0:
-        print(types[int(y_pred[0])])
-    
-    counter += 1
+    #keyboard_control(y_pred) # keyboard control, uncomment to simulate key presses
         
 print('Streams closed')
-            
